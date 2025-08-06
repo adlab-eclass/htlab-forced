@@ -1,0 +1,230 @@
+import base64
+
+# Read your schematic PNG
+with open("Forced Air Convection.drawio.png", "rb") as img_file:
+    b64_string = base64.b64encode(img_file.read()).decode('utf-8')
+
+# Create full standalone index.html
+with open("index.html", "w") as f:
+    f.write(f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Forced Convection Virtual Lab</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body {{
+    font-family: Arial, sans-serif;
+    background: #f8f8f8;
+    text-align: center;
+    padding: 20px;
+  }}
+  #lab {{
+    position: relative;
+    width: 900px;
+    height: 400px;
+    margin: auto;
+    border: 2px solid #444;
+    background: url('data:image/png;base64,{b64_string}') no-repeat center;
+    background-size: contain;
+  }}
+  #blower {{
+    position: absolute;
+    right: 30px;
+    bottom: 50px;
+    width: 120px;
+    height: 120px;
+    border: 5px solid #333;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ddd 40%, #aaa 100%);
+    overflow: hidden;
+    z-index: 5;
+  }}
+  .blade {{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 50px;
+    background: #444;
+    transform-origin: center -20px;
+  }}
+  #blade1 {{ transform: rotate(0deg); }}
+  #blade2 {{ transform: rotate(120deg); }}
+  #blade3 {{ transform: rotate(240deg); }}
+  @keyframes spin {{
+    from {{ transform: rotate(0deg); }}
+    to   {{ transform: rotate(360deg); }}
+  }}
+  .arrow {{
+    position: absolute;
+    right: -50px;
+    font-size: 40px;
+    color: #1E90FF;
+    opacity: 0.8;
+  }}
+  @keyframes moveAir {{
+    from {{ right: -60px; }}
+    to   {{ right: 920px; }}
+  }}
+  .sensor {{
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    background: red;
+    border-radius: 50%;
+    color: white;
+    font-size: 10px;
+    line-height: 22px;
+    text-align: center;
+  }}
+  #T1 {{ left: 730px; top: 120px; }}
+  #T2 {{ left: 640px; top: 120px; }}
+  #T3 {{ left: 570px; top: 120px; }}
+  #T4 {{ left: 500px; top: 120px; }}
+  #T5 {{ left: 430px; top: 120px; }}
+  #T6 {{ left: 90px; top: 120px; }}
+  #controls {{ margin-top: 20px; }}
+  #chartContainer {{ width: 850px; margin: 30px auto; display: none; }}
+</style>
+</head>
+<body>
+<h2>Virtual Lab: Heat Transfer in Forced Convection</h2>
+
+<div id="lab">
+  <div id="blower">
+    <div class="blade" id="blade1"></div>
+    <div class="blade" id="blade2"></div>
+    <div class="blade" id="blade3"></div>
+  </div>
+  <div class="arrow" style="top:120px;">➤</div>
+  <div class="arrow" style="top:200px;">➤</div>
+  <div class="arrow" style="top:280px;">➤</div>
+  <div class="sensor" id="T1">T1</div>
+  <div class="sensor" id="T2">T2</div>
+  <div class="sensor" id="T3">T3</div>
+  <div class="sensor" id="T4">T4</div>
+  <div class="sensor" id="T5">T5</div>
+  <div class="sensor" id="T6">T6</div>
+</div>
+
+<div id="controls">
+  <button id="toggleBtn">Turn ON Blower</button><br><br>
+  Ambient Temp: <input type="number" id="ambientInput" value="25"> °C<br><br>
+  Airflow Speed: <input type="range" id="speedControl" min="1" max="5" value="3">
+  <span id="speedValue">3</span> m/s<br><br>
+  Voltage (V): <input type="number" id="voltageInput" value="220">
+  Current (A): <input type="number" id="currentInput" value="2"><br><br>
+  Heater Resistance: <input type="range" id="resistanceControl" min="0" max="100" value="50">
+  <span id="resistanceValue">50</span>%<br><br>
+  <b>Heater Power: <span id="powerDisplay">220W</span></b><br><br>
+  <button id="showTempsBtn">Show Temperatures</button>
+</div>
+
+<div id="chartContainer">
+  <h3>Temperature vs Time (T1–T6)</h3>
+  <canvas id="tempChart"></canvas>
+</div>
+
+<script>
+let isOn = false, time = 0, chart, chartData;
+const blades = document.querySelectorAll('.blade');
+const arrows = document.querySelectorAll('.arrow');
+const btn = document.getElementById('toggleBtn');
+const showTempsBtn = document.getElementById('showTempsBtn');
+const speedControl = document.getElementById('speedControl');
+const speedValue = document.getElementById('speedValue');
+const voltageInput = document.getElementById('voltageInput');
+const currentInput = document.getElementById('currentInput');
+const resistanceControl = document.getElementById('resistanceControl');
+const resistanceValue = document.getElementById('resistanceValue');
+const ambientInput = document.getElementById('ambientInput');
+const powerDisplay = document.getElementById('powerDisplay');
+const chartContainer = document.getElementById('chartContainer');
+
+arrows.forEach(a => a.style.display = 'none');
+
+btn.addEventListener('click', () => {{
+  isOn = !isOn;
+  if (isOn) {{
+    updateSettings();
+    arrows.forEach(a => a.style.display = 'block');
+  }} else {{
+    blades.forEach(b => b.style.animation = 'none');
+    arrows.forEach(a => a.style.display = 'none');
+  }}
+  btn.textContent = isOn ? 'Turn OFF Blower' : 'Turn ON Blower';
+}});
+
+function updateSettings() {{
+  const speed = speedControl.value;
+  speedValue.textContent = speed;
+  const res = resistanceControl.value;
+  resistanceValue.textContent = res;
+  const V = parseFloat(voltageInput.value);
+  const I = parseFloat(currentInput.value);
+  const Q = V * I * (res / 100);
+  powerDisplay.textContent = Q.toFixed(1) + " W";
+  blades.forEach(b => {{
+    b.style.animation = isOn ? `spin ${{6/speed}}s linear infinite` : 'none';
+  }});
+  arrows.forEach((a, i) => {{
+    a.style.animation = isOn ? `moveAir ${{6/speed}}s linear infinite` : 'none';
+    a.style.animationDelay = `${{i * (1/speed)}}s`;
+  }});
+  return Q;
+}}
+
+function initChart() {{
+  chartContainer.style.display = 'block';
+  const ctx = document.getElementById('tempChart').getContext('2d');
+  if (chart) chart.destroy();
+  chartData = {{
+    labels: [],
+    datasets: ["T1","T2","T3","T4","T5","T6"].map((t,i)=>({{
+      label:t, borderColor:["red","orange","green","blue","purple","brown"][i],
+      data:[], fill:false
+    }}))
+  }};
+  chart = new Chart(ctx, {{
+    type:'line', data:chartData,
+    options: {{animation:false, scales:{{y:{{min:20,max:120}}}}}}
+  }});
+}}
+
+function getTemps(speed, Q) {{
+  const Tamb = parseFloat(ambientInput.value);
+  const pos = {{T2:0.25,T3:0.5,T4:0.75,T5:1}};
+  let temps = {{}};
+  temps.T1 = Tamb + (Math.random()*2-1);
+  temps.T6 = Tamb + (Math.random()*2-1);
+  for (let s in pos) {{
+    temps[s] = Tamb + Q/50 * pos[s] * (speed/5) + (Math.random()*2-1);
+  }}
+  return temps;
+}}
+
+setInterval(() => {{
+  if (isOn && chartData) {{
+    time++;
+    const Q = updateSettings();
+    const speed = speedControl.value;
+    const temps = getTemps(speed, Q);
+    chartData.labels.push(time);
+    ["T1","T2","T3","T4","T5","T6"].forEach((s,i) => {{
+      chartData.datasets[i].data.push(temps[s]);
+      if(chartData.datasets[i].data.length>20) chartData.datasets[i].data.shift();
+    }});
+    if(chartData.labels.length>20) chartData.labels.shift();
+    chart.update();
+  }}
+}},1000);
+
+showTempsBtn.addEventListener('click', initChart);
+</script>
+</body>
+</html>
+""")
+
+print("✅ index.html created with full interactive lab embedded.")
